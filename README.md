@@ -13,12 +13,13 @@
 
 **Define Tu Futuro** es una aplicación web interactiva desarrollada con **Python, Streamlit, Plotly y scikit-learn** que permite explorar datos históricos del proceso de admisión universitaria chileno y generar una estimación orientativa para una carrera e institución determinadas.
 
-La aplicación combina cuatro componentes:
+La aplicación combina cinco componentes:
 
 1. **Predicción académica de admisión**, basada en puntajes, percentiles históricos y un modelo Random Forest.
 2. **Afinidad contextual**, que compara el perfil socioeducativo del usuario con perfiles históricos similares.
 3. **Recomendaciones de carreras alternativas**, ordenadas por una combinación de probabilidad estimada y afinidad contextual.
 4. **Análisis exploratorio de datos**, con indicadores, correlaciones, gráficos y descarga de vistas filtradas.
+5. **Informe de orientación vocacional asistido por IA**, generado con **HuggingFace (Qwen 2.5)** e interpretado dinámicamente en un diseño **Bento Grid nativo**.
 
 La herramienta está diseñada para apoyar la exploración vocacional y facilitar la comprensión de datos complejos. **No reemplaza las ponderaciones, vacantes, requisitos ni resultados oficiales del proceso de admisión.**
 
@@ -134,6 +135,19 @@ La aplicación incluye:
 - Asociación entre rama educacional y carrera.
 - Explorador de datos con selección de columnas y descarga en CSV.
 
+### 3.7 Informe de orientación vocacional asistido por IA (Bento Grid)
+
+Al presionar el botón **🚀 Calcular admisión y afinidad**, el sistema ejecuta una llamada a la **Inference API de HuggingFace** (modelo `Qwen/Qwen2.5-7B-Instruct`) utilizando un prompt enriquecido que sintetiza:
+
+- Perfil socioeducativo completo del postulante.
+- Puntajes ingresados vs promedios históricos de la carrera.
+- Probabilidad estimada de ingreso y percentiles P25 (corte) y P50 (mediana).
+- Factores sociodemográficos influyentes detectados por el modelo.
+- Afinidad contextual y distribución de áreas (Ingeniería, Técnica, Otras).
+- Recomendaciones de carreras alternativas con sus datos de corte y afinidad.
+
+El informe se presenta automáticamente al final de la pestaña **🧭 Perfil y Afinidad Contextual** estructurado en un **diseño Bento Grid nativo en Streamlit** (`st.columns` + `st.container(border=True)`). Además, cuenta con un botón **🔄 Regenerar informe IA** para re-obtener la interpretación del modelo en cualquier momento.
+
 ---
 
 ## 🧠 4. Arquitectura de la solución
@@ -152,13 +166,15 @@ Aplicación Streamlit
         ├── Modelo Random Forest
         ├── Calibración empírica por percentiles
         ├── Motor de similitud contextual
-        └── Motor de recomendaciones
+        ├── Motor de recomendaciones
+        └── Módulo HuggingFace (Inference API Qwen 2.5)
         │
         ▼
 Resultados y visualizaciones
         ├── Probabilidad orientativa
         ├── Ponderado y percentiles
         ├── Tarjetas de afinidad
+        ├── Informe de IA en Bento Grid nativo
         ├── Carreras alternativas
         └── Análisis exploratorio
 ```
@@ -595,6 +611,7 @@ La interfaz utiliza un tema oscuro, tarjetas claras de alto contraste y componen
 | Procesamiento de datos | pandas, NumPy |
 | Machine Learning | scikit-learn |
 | Persistencia de modelos | joblib |
+| Modelo de Lenguaje (IA) | HuggingFace Inference API (`Qwen/Qwen2.5-7B-Instruct`) |
 | Visualizaciones | Plotly |
 | Gráficos auxiliares | Matplotlib, Seaborn |
 | Despliegue sugerido | Streamlit Community Cloud |
@@ -611,6 +628,11 @@ escoge_mi_futuro_proyecto-main/
 ├── README.md
 ├── DEMRE_1.csv                      # No incluido necesariamente en el repositorio
 │
+├── hugging_face/
+│   ├── __init__.py
+│   ├── huggingface.py               # Cliente InferenceClient y llamada al LLM Qwen 2.5
+│   └── prompts.py                   # Constructor del prompt estructurado enriquecido
+│
 ├── src/
 │   ├── model.py
 │   └── preprocessing.py
@@ -626,7 +648,9 @@ escoge_mi_futuro_proyecto-main/
 
 ### Descripción de archivos
 
-- `app.py`: interfaz principal y lógica de interacción en Streamlit.
+- `app.py`: interfaz principal, renderizado Bento Grid y lógica de interacción en Streamlit.
+- `hugging_face/huggingface.py`: cliente de IA para interacción con la API de HuggingFace.
+- `hugging_face/prompts.py`: función `construir_prompt` que sintetiza puntajes, predicción y afinidad en un prompt vocacional.
 - `train_model.py`: ejecución del entrenamiento y generación de artefactos.
 - `src/preprocessing.py`: carga, limpieza, transformación y estadísticas históricas.
 - `src/model.py`: ponderaciones, entrenamiento, predicción y recomendaciones.
@@ -757,9 +781,12 @@ Texto recomendado para la interfaz:
 - Estrategia de respaldo para evitar resultados constantes de “Sin datos”.
 - Restauración de las cuatro tarjetas dinámicas de afinidad.
 - Uso de `st.session_state` para calcular solo al presionar el botón.
-- Aviso de cambios pendientes cuando el usuario modifica inputs sin recalcular.
 - Incorporación de cinco pestañas de análisis.
 - Explorador de datos con descarga en CSV.
+- Creación del paquete `hugging_face/` con integración de la Inference API de HuggingFace (`Qwen/Qwen2.5-7B-Instruct`).
+- Refactorización del método `construir_prompt` para alimentar el LLM con la totalidad de resultados académicos, percentiles, afinidad contextual y carreras alternativas.
+- Generación automática del informe al presionar **🚀 Calcular admisión y afinidad** con opción de regeneración manual (`🔄 Regenerar informe IA`).
+- Presentación del informe de orientación vocacional mediante un diseño **Bento Grid nativo en Streamlit** (`st.columns` + `st.container(border=True)`).
 
 ---
 

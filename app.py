@@ -1,5 +1,6 @@
 import html
 import os
+import re
 import sys
 import time
 import unicodedata
@@ -10,6 +11,9 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
+
+from hugging_face.huggingface import generar_informe
+from hugging_face.prompts import construir_prompt
 
 # Permite importar el paquete src cuando la app se ejecuta desde Streamlit.
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
@@ -209,6 +213,93 @@ st.markdown(
         color: white !important;
         font-weight: 700;
     }
+
+    /* Bento Grid Layout para Informe IA */
+    .bento-grid {
+        display: grid;
+        grid-template-columns: repeat(12, 1fr);
+        gap: 1.2rem;
+        margin-top: 1.2rem;
+        margin-bottom: 1.8rem;
+    }
+
+    .bento-card {
+        background: linear-gradient(145deg, #1E293B 0%, #0F172A 100%);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        border-radius: 20px;
+        padding: 1.5rem;
+        color: #F8FAFC;
+        box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.35);
+        transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+        display: flex;
+        flex-direction: column;
+    }
+
+    .bento-card:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 20px 35px -8px rgba(0, 0, 0, 0.5);
+    }
+
+    .bento-card-blue {
+        border-left: 5px solid #3B82F6;
+        background: linear-gradient(145deg, rgba(30, 58, 138, 0.25) 0%, rgba(15, 23, 42, 0.95) 100%);
+    }
+
+    .bento-card-emerald {
+        border-left: 5px solid #10B981;
+        background: linear-gradient(145deg, rgba(6, 78, 59, 0.25) 0%, rgba(15, 23, 42, 0.95) 100%);
+    }
+
+    .bento-card-cyan {
+        border-left: 5px solid #06B6D4;
+        background: linear-gradient(145deg, rgba(22, 78, 99, 0.25) 0%, rgba(15, 23, 42, 0.95) 100%);
+    }
+
+    .bento-card-purple {
+        border-left: 5px solid #8B5CF6;
+        background: linear-gradient(145deg, rgba(88, 28, 135, 0.25) 0%, rgba(15, 23, 42, 0.95) 100%);
+    }
+
+    .bento-card-amber {
+        border-left: 5px solid #F59E0B;
+        background: linear-gradient(145deg, rgba(120, 53, 15, 0.25) 0%, rgba(15, 23, 42, 0.95) 100%);
+    }
+
+    .bento-card-green {
+        border-left: 5px solid #22C55E;
+        background: linear-gradient(145deg, rgba(20, 83, 45, 0.25) 0%, rgba(15, 23, 42, 0.95) 100%);
+    }
+
+    .bento-card-title {
+        font-size: 1.15rem;
+        font-weight: 700;
+        margin-bottom: 0.85rem;
+        color: #F8FAFC;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        padding-bottom: 0.6rem;
+        letter-spacing: -0.01em;
+    }
+
+    .bento-card-body {
+        font-size: 0.92rem;
+        line-height: 1.65;
+        color: #E2E8F0;
+        flex-grow: 1;
+    }
+
+    .bento-col-12 { grid-column: span 12; }
+    .bento-col-7 { grid-column: span 7; }
+    .bento-col-6 { grid-column: span 6; }
+    .bento-col-5 { grid-column: span 5; }
+
+    @media (max-width: 900px) {
+        .bento-col-7, .bento-col-6, .bento-col-5 {
+            grid-column: span 12;
+        }
+    }
 </style>
 """,
     unsafe_allow_html=True,
@@ -309,6 +400,123 @@ def clean_options(dataframe, column, fallback):
 
 def html_value(value):
     return html.escape(str(value))
+
+
+def markdown_to_clean_html(text):
+    if not text:
+        return ""
+    formatted = re.sub(r"\*\*(.*?)\*\*", r"<b>\1</b>", text)
+    lines = formatted.split("\n")
+    formatted_lines = []
+    in_list = False
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("- ") or stripped.startswith("• ") or stripped.startswith("* "):
+            item_text = stripped[2:].strip()
+            if not in_list:
+                formatted_lines.append('<ul style="margin: 0.4rem 0; padding-left: 1.2rem;">')
+                in_list = True
+            formatted_lines.append(f'<li style="margin-bottom: 0.35rem;">{item_text}</li>')
+        else:
+            if in_list:
+                formatted_lines.append("</ul>")
+                in_list = False
+            if stripped:
+                formatted_lines.append(f'<p style="margin: 0.4rem 0;">{stripped}</p>')
+    if in_list:
+        formatted_lines.append("</ul>")
+    return "\n".join(formatted_lines)
+
+
+def parse_informe_sections(informe_text):
+    sections = {}
+    current_key = "General"
+    current_lines = []
+
+    for line in informe_text.split("\n"):
+        if line.strip().startswith("#"):
+            if current_lines:
+                sections[current_key] = "\n".join(current_lines).strip()
+                current_lines = []
+            header_title = line.strip().lstrip("#").strip()
+            current_key = header_title
+        else:
+            if line.strip().startswith("---") or line.strip().startswith("==="):
+                continue
+            current_lines.append(line)
+
+    if current_lines:
+        sections[current_key] = "\n".join(current_lines).strip()
+
+    return sections
+
+
+def find_bento_section(sections_dict, keywords):
+    for title, content in sections_dict.items():
+        if any(kw.lower() in title.lower() for kw in keywords):
+            return title, content
+    return None, None
+
+
+def render_informe_bento_grid(informe_text):
+    if not informe_text:
+        return
+
+    sections = parse_informe_sections(informe_text)
+    if len(sections) < 2:
+        st.markdown(informe_text)
+        return
+
+    title_res, content_res = find_bento_section(sections, ["resumen"])
+    title_diag, content_diag = find_bento_section(sections, ["diagnóstico", "diagnostico"])
+    title_comp, content_comp = find_bento_section(sections, ["comparativo"])
+    title_afin, content_afin = find_bento_section(sections, ["afinidad"])
+    title_fort, content_fort = find_bento_section(sections, ["fortalezas"])
+    title_reco, content_reco = find_bento_section(sections, ["recomendaciones"])
+
+    used_titles = set(t for t in [title_res, title_diag, title_comp, title_afin, title_fort, title_reco] if t)
+
+    def _render_card(title, content, default_title):
+        display_title = title or default_title
+        try:
+            with st.container(border=True):
+                st.markdown(f"#### {display_title}")
+                st.markdown(content)
+        except (TypeError, AttributeError):
+            st.markdown(f"#### {display_title}")
+            st.markdown(content)
+
+    # Fila 1 del Bento: Resumen (70%) + Diagnóstico (50%)
+    c1, c2 = st.columns([5, 5])
+    with c1:
+        if content_res:
+            _render_card(title_res, content_res, "📋 Resumen del perfil")
+    with c2:
+        if content_diag:
+            _render_card(title_diag, content_diag, "📊 Diagnóstico de admisión")
+
+    # Fila 2 del Bento: Comparativo (50%) + Afinidad (50%)
+    c3, c4 = st.columns([5, 5])
+    with c3:
+        if content_comp:
+            _render_card(title_comp, content_comp, "📈 Análisis comparativo")
+    with c4:
+        if content_afin:
+            _render_card(title_afin, content_afin, "🧭 Afinidad contextual")
+
+    # Fila 3 del Bento: Fortalezas (50%) + Recomendaciones (50%)
+    c5, c6 = st.columns([6, 6])
+    with c5:
+        if content_fort:
+            _render_card(title_fort, content_fort, "⭐ Fortalezas observadas")
+    with c6:
+        if content_reco:
+            _render_card(title_reco, content_reco, "🎯 Recomendaciones")
+
+    # Secciones adicionales fuera del esquema estándar
+    for title, content in sections.items():
+        if title not in used_titles and content.strip():
+            _render_card(title, content, title)
 
 
 def numeric_series(dataframe, column):
@@ -912,6 +1120,53 @@ if btn_calcular:
             "recommendations": calculated_recommendations,
             "area_distribution": calculated_area_distribution,
         }
+
+    # ── Generación automática del informe IA ──
+    with st.spinner("Generando informe de orientación vocacional con IA..."):
+        prompt_perfil = {
+            "sexo": u_sexo,
+            "nacionalidad": u_nac,
+            "region": u_region,
+            "dependencia": u_dep,
+            "rama": u_rama,
+            "cuantil": u_cuantil,
+            "trabajo": u_trabajo,
+            "financiamiento": u_finan,
+            "salud": u_salud,
+            "convivencia": u_viven,
+            "jefe_hogar": u_jefe,
+            "carrera": selected_carrera,
+            "institucion": selected_inst,
+        }
+
+        cien_val = cien_score if not np.isnan(cien_score) else None
+        hycs_val = hycs_score if not np.isnan(hycs_score) else None
+        prompt_puntajes = {
+            "nem": nem_score,
+            "lenguaje": leng_score,
+            "matematica": mate_score,
+            "tipo_electiva": opt_test,
+            "puntaje_electiva": cien_val if opt_test == "Ciencias" else hycs_val,
+        }
+
+        recs_list = (
+            calculated_recommendations.to_dict(orient="records")
+            if calculated_recommendations is not None
+            and not calculated_recommendations.empty
+            else []
+        )
+
+        prompt_text = construir_prompt(
+            perfil=prompt_perfil,
+            puntajes=prompt_puntajes,
+            prediccion=calculated_prediction,
+            contexto=calculated_context,
+            distribucion_areas=calculated_area_distribution,
+            carreras_alternativas=recs_list,
+        )
+        informe_ia = generar_informe(prompt_text)
+        st.session_state["informe_ia"] = informe_ia
+
     st.sidebar.success("Resultados actualizados.")
 
 calculation = st.session_state.get("admission_calculation")
@@ -959,6 +1214,7 @@ if results_ready:
     context = calculation["context"]
     recs = calculation["recommendations"]
     area_distribution = calculation["area_distribution"]
+
 else:
     profile = current_profile
     prediction = None
@@ -1315,6 +1571,71 @@ with tab2:
             </div>
             """,
                 unsafe_allow_html=True,
+            )
+
+        # ── Informe de IA al final de Tab 2 ──
+        st.markdown("---")
+        st.markdown("### 🤖 Informe de Orientación Vocacional (IA)")
+        st.caption(
+            "Informe generado automáticamente por un modelo de lenguaje (Qwen 2.5) "
+            "a partir de todos los resultados calculados. "
+            "No reemplaza orientación profesional humana."
+        )
+
+        informe_ia = st.session_state.get("informe_ia")
+
+        if st.button("🔄 Regenerar informe IA", key="btn_regenerar_ia"):
+            with st.spinner("Regenerando informe de orientación vocacional..."):
+                prompt_perfil_regen = {
+                    "sexo": u_sexo,
+                    "nacionalidad": u_nac,
+                    "region": u_region,
+                    "dependencia": u_dep,
+                    "rama": u_rama,
+                    "cuantil": u_cuantil,
+                    "trabajo": u_trabajo,
+                    "financiamiento": u_finan,
+                    "salud": u_salud,
+                    "convivencia": u_viven,
+                    "jefe_hogar": u_jefe,
+                    "carrera": selected_carrera,
+                    "institucion": selected_inst,
+                }
+
+                cien_regen = cien_score if not np.isnan(cien_score) else None
+                hycs_regen = hycs_score if not np.isnan(hycs_score) else None
+                prompt_puntajes_regen = {
+                    "nem": nem_score,
+                    "lenguaje": leng_score,
+                    "matematica": mate_score,
+                    "tipo_electiva": opt_test,
+                    "puntaje_electiva": cien_regen if opt_test == "Ciencias" else hycs_regen,
+                }
+
+                recs_regen = (
+                    recs.to_dict(orient="records")
+                    if recs is not None and not recs.empty
+                    else []
+                )
+
+                prompt_regen = construir_prompt(
+                    perfil=prompt_perfil_regen,
+                    puntajes=prompt_puntajes_regen,
+                    prediccion=prediction,
+                    contexto=context,
+                    distribucion_areas=area_distribution,
+                    carreras_alternativas=recs_regen,
+                )
+                informe_ia = generar_informe(prompt_regen)
+                st.session_state["informe_ia"] = informe_ia
+
+        if informe_ia:
+            render_informe_bento_grid(informe_ia)
+        else:
+            st.info(
+                "El informe de IA se genera automáticamente al presionar "
+                '"🚀 Calcular admisión y afinidad". '
+                "También puedes regenerarlo con el botón de arriba."
             )
 
 
