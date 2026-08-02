@@ -731,7 +731,7 @@ La aplicación también puede intentar entrenar automáticamente cuando no encue
 4. Definir `app.py` como archivo principal.
 5. Confirmar que `requirements.txt` y los archivos `.joblib` estén disponibles.
 
-🚀 **Aplicación publicada:** `REEMPLAZAR_CON_URL_FINAL`
+🚀 **Aplicación publicada:** `https://escogemifuturoproyecto-7nzl8nk6lwpt34vpzc8dle.streamlit.app/`
 
 > Si los artefactos exceden los límites del repositorio, deben almacenarse mediante una estrategia compatible con el entorno de despliegue.
 
