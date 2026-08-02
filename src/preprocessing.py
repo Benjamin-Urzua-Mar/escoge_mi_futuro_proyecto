@@ -3,6 +3,7 @@ import numpy as np
 import os
 
 def clean_text(text):
+    # Corrige errores frecuentes de codificación antes de comparar categorías.
     if not isinstance(text, str):
         return text
     replacements = {
@@ -23,9 +24,11 @@ def load_and_preprocess_demre(filepath, sample_size=80000):
     Loads DEMRE CSV dataset and preprocesses scores, text encodings, and full socio-demographic features.
     """
     print(f"Cargando dataset desde {filepath}...")
+    # Lee el archivo original conservando la estructura esperada por el proyecto.
     df = pd.read_csv(filepath, sep=';', encoding='latin-1')
     
     if sample_size and len(df) > sample_size:
+        # Limita el volumen de trabajo con una muestra reproducible.
         df = df.sample(sample_size, random_state=42).copy()
     
     text_cols = [
@@ -36,23 +39,26 @@ def load_and_preprocess_demre(filepath, sample_size=80000):
     ]
     for col in text_cols:
         if col in df.columns:
+            # Normaliza texto para que instituciones y carreras sean comparables.
             df[col] = df[col].astype(str).apply(clean_text)
             
     score_cols = ['ptje_nem', 'ptje_leng', 'ptje_mate', 'ptje_hycs', 'ptje_cien']
     for col in score_cols:
+        # Convierte puntajes inválidos o ausentes en un valor de respaldo.
         df[col] = pd.to_numeric(df[col], errors='coerce').fillna(550.0)
         
     df['cuantil_ingreso_bruto_fam'] = pd.to_numeric(df['cuantil_ingreso_bruto_fam'], errors='coerce').fillna(3.0)
     
-    # Binary/Categorical Encoding for ML Features
+    # Codifica variables categóricas como indicadores numéricos para el modelo.
     df['colegio_particular_pagado'] = (df['nombre_dependencia_establecimiento'].str.contains('Pagado', case=False, na=False)).astype(int)
     df['colegio_subvencionado'] = (df['nombre_dependencia_establecimiento'].str.contains('Subvencionado', case=False, na=False)).astype(int)
     df['trabaja_remunerado'] = (df['descripcion_trabajo_remunerado'].str.contains('Sí|Si', case=False, na=False)).astype(int)
     df['es_femenino'] = (df['nombre_sexo'].str.contains('Femenino', case=False, na=False)).astype(int)
     
-    # Max specific test score
+    # Resume Historia y Ciencias en una sola variable de prueba específica.
     df['ptje_especifica_max'] = df[['ptje_hycs', 'ptje_cien']].max(axis=1)
     
+    # Prepara las columnas que participan en el cálculo del ponderado estimado.
     nem = df['ptje_nem']
     leng = df['ptje_leng']
     mate = df['ptje_mate']
@@ -64,6 +70,7 @@ def load_and_preprocess_demre(filepath, sample_size=80000):
     is_hum = carreras.str.contains('derecho|periodis|histori|psicolog', regex=True, na=False)
     is_com = carreras.str.contains('comercial|econom|auditor', regex=True, na=False)
 
+    # Aplica ponderaciones orientativas según el área de la carrera.
     df['puntaje_ponderado_estimado'] = (
         np.where(is_ing, nem * 0.20 + leng * 0.15 + mate * 0.45 + esp * 0.20,
         np.where(is_salud, nem * 0.25 + leng * 0.15 + mate * 0.25 + df['ptje_cien'] * 0.35,
@@ -75,6 +82,7 @@ def load_and_preprocess_demre(filepath, sample_size=80000):
     return df
 
 def generate_career_statistics(df):
+    # Calcula referencias históricas por institución y carrera.
     grp = df.groupby(['nombre_institucion_educacion_superior', 'nombre_carrera_normalizacion']).agg(
         total_postulaciones=('orden_preferencia', 'count'),
         nem_prom=('ptje_nem', 'mean'),
@@ -93,5 +101,6 @@ def generate_career_statistics(df):
         ponderado_p90=('puntaje_ponderado_estimado', lambda x: float(np.percentile(x, 90)))
     ).reset_index()
     
+    # Descarta grupos demasiado pequeños para producir percentiles útiles.
     grp = grp[grp['total_postulaciones'] >= 3].copy()
     return grp

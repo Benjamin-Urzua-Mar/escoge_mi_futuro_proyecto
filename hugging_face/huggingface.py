@@ -24,6 +24,7 @@ _SYSTEM_MESSAGE = (
 
 def _get_client() -> InferenceClient:
     """Devuelve un cliente singleton de HuggingFace Inference."""
+    # Prioriza el token configurado en el entorno para autenticar la solicitud.
     token = os.environ.get("HF_TOKEN", _FALLBACK_TOKEN)
     return InferenceClient(token=token)
 
@@ -42,6 +43,7 @@ def generar_informe(prompt: str) -> str:
         Texto del informe o mensaje de error descriptivo.
     """
     try:
+        # Crea el cliente y envía el prompt junto con las reglas del sistema.
         client = _get_client()
         response = client.chat_completion(
             model=_MODEL_ID,
@@ -53,6 +55,7 @@ def generar_informe(prompt: str) -> str:
             max_tokens=1500,
         )
 
+        # Extrae el contenido solo si la API devolvió al menos una alternativa.
         if response.choices:
             return response.choices[0].message.content
 

@@ -808,13 +808,10 @@ Texto recomendado para la interfaz:
 
 ## 👥 23. Integrantes del equipo y roles
 
-- **Integrante 1:** Product Owner y coordinación general.
-- **Integrante 2:** Data Engineer, limpieza y preprocesamiento DEMRE.
-- **Integrante 3:** Data Scientist, EDA y modelamiento estadístico.
-- **Integrante 4:** Frontend Developer, desarrollo en Streamlit y Plotly.
-- **Integrante 5:** UX Writer y comunicación no técnica.
-
-> Reemplazar los nombres y roles según la conformación definitiva del equipo.
+- **Integrante 1:** Sebastián Morales.
+- **Integrante 2:** Fabián Valdés.
+- **Integrante 3:** Camila Bravo.
+- **Integrante 4:** Benjamín Urzúa.
 
 ---
 

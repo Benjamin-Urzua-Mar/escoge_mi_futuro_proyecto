@@ -311,6 +311,7 @@ st.markdown(
 # ---------------------------------------------------------
 @st.cache_resource
 def load_app_artifacts():
+    # Localiza los modelos persistidos y los entrena solo si faltan.
     models_dir = os.path.join(BASE_DIR, "models")
 
     stats_path = os.path.join(models_dir, "career_stats.joblib")
@@ -318,6 +319,7 @@ def load_app_artifacts():
     eda_path = os.path.join(models_dir, "demre_sample_eda.joblib")
 
     if not (os.path.exists(stats_path) and os.path.exists(clf_path)):
+        # Busca el dataset fuente en las ubicaciones compatibles con el proyecto.
         from src.model import train_and_save_model
 
         candidate_data_paths = [
@@ -331,6 +333,7 @@ def load_app_artifacts():
             )
         train_and_save_model(data_path, models_dir)
 
+    # Carga estadísticas, clasificador y muestra EDA para reutilizarlos en la sesión.
     stats_df = joblib.load(stats_path)
     model_artifact = joblib.load(clf_path)
     eda_sample = joblib.load(eda_path) if os.path.exists(eda_path) else None
@@ -362,6 +365,7 @@ def find_column(dataframe, aliases):
     if dataframe is None:
         return None
 
+    # Normaliza nombres para tolerar variantes de columnas del dataset.
     normalized_columns = {normalize_column_name(col): col for col in dataframe.columns}
 
     for alias in aliases:
@@ -369,7 +373,7 @@ def find_column(dataframe, aliases):
         if normalized_alias in normalized_columns:
             return normalized_columns[normalized_alias]
 
-    # Segundo intento: coincidencia parcial, útil para nombres largos del DEMRE.
+    # Usa coincidencia parcial como respaldo para nombres largos del DEMRE.
     for alias in aliases:
         normalized_alias = normalize_column_name(alias)
         if len(normalized_alias) < 5:
@@ -385,6 +389,7 @@ def clean_options(dataframe, column, fallback):
     if dataframe is None or column is None or column not in dataframe.columns:
         return fallback
 
+    # Elimina valores vacíos y devuelve opciones ordenadas para los selectores.
     values = (
         dataframe[column]
         .dropna()
@@ -405,6 +410,7 @@ def html_value(value):
 def markdown_to_clean_html(text):
     if not text:
         return ""
+    # Convierte el subconjunto de Markdown usado por el informe a HTML seguro para la vista.
     formatted = re.sub(r"\*\*(.*?)\*\*", r"<b>\1</b>", text)
     lines = formatted.split("\n")
     formatted_lines = []
@@ -429,6 +435,7 @@ def markdown_to_clean_html(text):
 
 
 def parse_informe_sections(informe_text):
+    # Divide el informe generado por sus encabezados Markdown.
     sections = {}
     current_key = "General"
     current_lines = []
@@ -462,6 +469,7 @@ def render_informe_bento_grid(informe_text):
     if not informe_text:
         return
 
+    # Organiza las secciones del informe en tarjetas de la interfaz.
     sections = parse_informe_sections(informe_text)
     if len(sections) < 2:
         st.markdown(informe_text)
@@ -530,6 +538,7 @@ def build_context_similarity(dataframe, profile, context_columns):
     if dataframe is None or dataframe.empty:
         return pd.Series(dtype=float, index=getattr(dataframe, "index", None))
 
+    # Calcula una similitud por variable y luego la promedia por registro.
     components = []
 
     for key, selected_value in profile.items():
@@ -559,6 +568,7 @@ def filter_by_target(dataframe, institution, career, institution_col, career_col
     if dataframe is None or dataframe.empty:
         return pd.DataFrame()
 
+    # Filtra progresivamente por institución y carrera sin modificar el dataframe original.
     subset = dataframe
 
     if institution and institution_col and institution_col in subset.columns:
@@ -584,6 +594,7 @@ def contextual_metrics(
     career_col,
     ponderado_col,
 ):
+    # Detecta qué variables contextuales pueden calcularse con las columnas disponibles.
     available_keys = [
         key
         for key, column in context_columns.items()
@@ -601,6 +612,7 @@ def contextual_metrics(
             "nearest_ponderado": None,
         }
 
+    # Mide similitud y selecciona primero la combinación exacta solicitada.
     similarity = build_context_similarity(dataframe, profile, context_columns)
     # Primero busca la combinación exacta carrera + institución. Si la muestra EDA
     # no contiene esa pareja, usa todos los registros de la carrera como respaldo.
@@ -639,6 +651,7 @@ def contextual_metrics(
     target_similarity = similarity.reindex(target.index) if not target.empty else pd.Series(dtype=float)
     target_affinity = float(target_similarity.mean() * 100) if not target_similarity.empty else None
 
+    # Cuenta coincidencias exactas y obtiene el grupo de perfiles más cercanos.
     exact_mask = similarity.ge(0.999999)
     exact_matches = int(exact_mask.sum())
 
@@ -705,6 +718,7 @@ def enrich_recommendations(
     if recommendations is None or recommendations.empty:
         return recommendations
 
+    # Añade afinidad contextual sin reemplazar la probabilidad original.
     enriched = recommendations.copy()
     affinities = []
 
@@ -724,7 +738,7 @@ def enrich_recommendations(
     probability = pd.to_numeric(enriched["probabilidad"], errors="coerce").fillna(0)
     affinity_numeric = pd.to_numeric(enriched["afinidad_contextual"], errors="coerce")
 
-    # La probabilidad original del modelo se conserva. Este índice solo ordena las alternativas.
+    # El índice combinado solo ordena las alternativas, no cambia su probabilidad.
     enriched["indice_combinado"] = np.where(
         affinity_numeric.notna(),
         probability * 0.75 + affinity_numeric.fillna(0) * 0.25,
@@ -760,6 +774,7 @@ def calculate_area_distribution(
     if dataframe is None or dataframe.empty:
         return empty_result
 
+    # Selecciona la columna que permite clasificar las carreras por área.
     source_col = None
     if career_type_col and career_type_col in dataframe.columns:
         source_col = career_type_col
@@ -769,6 +784,7 @@ def calculate_area_distribution(
     if source_col is None:
         return empty_result
 
+    # Usa los perfiles contextualmente más cercanos para estimar la distribución de áreas.
     similarity = build_context_similarity(dataframe, profile, context_columns)
     if similarity.empty:
         return empty_result
@@ -1063,6 +1079,7 @@ current_inputs = {
 
 if btn_calcular:
     with st.spinner("Procesando puntajes y variables contextuales..."):
+        # Calcula predicción, afinidad, recomendaciones y distribución en un mismo ciclo.
         calculated_context = contextual_metrics(
             eda_sample,
             current_profile,
@@ -1113,6 +1130,7 @@ if btn_calcular:
             eda_career_type_col,
         )
 
+        # Guarda el último cálculo confirmado para mantenerlo estable entre recargas.
         st.session_state["admission_calculation"] = {
             "inputs": current_inputs,
             "prediction": calculated_prediction,
@@ -1121,7 +1139,7 @@ if btn_calcular:
             "area_distribution": calculated_area_distribution,
         }
 
-    # ── Generación automática del informe IA ──
+    # Genera el informe interpretativo a partir de los resultados recién calculados.
     with st.spinner("Generando informe de orientación vocacional con IA..."):
         prompt_perfil = {
             "sexo": u_sexo,
@@ -1156,6 +1174,7 @@ if btn_calcular:
             else []
         )
 
+        # Construye el prompt con datos estructurados y solicita el informe a HuggingFace.
         prompt_text = construir_prompt(
             perfil=prompt_perfil,
             puntajes=prompt_puntajes,
@@ -1169,6 +1188,7 @@ if btn_calcular:
 
     st.sidebar.success("Resultados actualizados.")
 
+# Recupera el último cálculo para no actualizar resultados solo por cambiar un selector.
 calculation = st.session_state.get("admission_calculation")
 results_ready = calculation is not None
 
@@ -1249,6 +1269,7 @@ with tab1:
     if not results_ready:
         st.info('Configura tus datos y presiona “🚀 Calcular admisión y afinidad” para generar la predicción.')
     else:
+        # Presenta la probabilidad y las alternativas usando el cálculo confirmado.
         col_main, col_stats = st.columns([1.2, 1.0])
 
         with col_main:
@@ -1361,6 +1382,7 @@ with tab2:
     if not results_ready:
         st.info('Presiona “🚀 Calcular admisión y afinidad” para generar la ficha y las tarjetas dinámicas.')
     else:
+        # Muestra el perfil contextual y la comparación con registros históricos.
         st.markdown("### 🧭 Ficha vocacional y similitud histórica")
         st.caption(
             "Este bloque incorpora todos los inputs contextuales de app.py. No reemplaza la "
@@ -1586,6 +1608,7 @@ with tab2:
 
         if st.button("🔄 Regenerar informe IA", key="btn_regenerar_ia"):
             with st.spinner("Regenerando informe de orientación vocacional..."):
+                # Reutiliza los resultados actuales para solicitar una nueva interpretación.
                 prompt_perfil_regen = {
                     "sexo": u_sexo,
                     "nacionalidad": u_nac,
@@ -1643,6 +1666,7 @@ with tab2:
 # TAB 3: EDA
 # =========================================================
 with tab3:
+    # Resume la muestra EDA con métricas y gráficos de frecuencia.
     st.markdown("### 📊 Análisis exploratorio de datos del DEMRE")
 
     if eda_sample is None or eda_sample.empty:
@@ -1740,6 +1764,7 @@ with tab3:
 # TAB 4: Correlaciones socioeconómicas
 # =========================================================
 with tab4:
+    # Compara variables académicas y socioeconómicas solo cuando están disponibles.
     st.markdown("### 💰 Correlaciones socioeconómicas y previsión")
     st.write(
         "Exploración de la relación entre ingreso, puntajes, salud, dependencia escolar "
@@ -1937,6 +1962,7 @@ with tab4:
 # TAB 5: Explorador de datos (multiselect recuperado)
 # =========================================================
 with tab5:
+    # Permite inspeccionar y descargar una vista filtrada de la muestra EDA.
     st.markdown("### 📁 Explorador de datos completo")
 
     if eda_sample is None or eda_sample.empty:

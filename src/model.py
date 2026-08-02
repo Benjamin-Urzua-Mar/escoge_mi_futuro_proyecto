@@ -10,20 +10,26 @@ def train_and_save_model(data_path, models_dir):
     """
     Trains global selection classifier with academic + socio-demographic features.
     """
+    # Garantiza que exista el destino de los artefactos entrenados.
     os.makedirs(models_dir, exist_ok=True)
     
+    # Carga y transforma los registros antes de calcular estadísticas y features.
     df = load_and_preprocess_demre(data_path, sample_size=80000)
+    # Resume el comportamiento histórico de cada combinación carrera-institución.
     stats_df = generate_career_statistics(df)
     
+    # Guarda datos reutilizables para no repetir el preprocesamiento al abrir la app.
     joblib.dump(stats_df, os.path.join(models_dir, 'career_stats.joblib'))
     joblib.dump(df, os.path.join(models_dir, 'demre_sample_eda.joblib'))
     
+    # Une cada postulante con el corte histórico de su carrera e institución.
     df_merged = df.merge(
         stats_df[['nombre_institucion_educacion_superior', 'nombre_carrera_normalizacion', 'ponderado_p50', 'ponderado_p25']],
         on=['nombre_institucion_educacion_superior', 'nombre_carrera_normalizacion'],
         how='inner'
     )
     
+    # Define la etiqueta aproximada de admisión usando el percentil P25.
     df_merged['es_admitido_estimado'] = (df_merged['puntaje_ponderado_estimado'] >= df_merged['ponderado_p25']).astype(int)
     
     features = [
@@ -33,25 +39,31 @@ def train_and_save_model(data_path, models_dir):
         'colegio_subvencionado', 'trabaja_remunerado', 'es_femenino'
     ]
     
+    # Separa variables predictoras y elimina filas incompletas para entrenar.
     X = df_merged[features].dropna()
     y = df_merged.loc[X.index, 'es_admitido_estimado']
     
+    # Estandariza las variables para que sus escalas no distorsionen el entrenamiento.
     scaler = StandardScaler()
     X_scaled = scaler.fit_transform(X)
     
+    # Entrena el clasificador con parámetros reproducibles y paralelización disponible.
     clf = RandomForestClassifier(n_estimators=70, max_depth=10, random_state=42, n_jobs=-1)
     clf.fit(X_scaled, y)
     
+    # Agrupa modelo, escalador y orden de features en un único artefacto.
     model_artifact = {
         'model': clf,
         'scaler': scaler,
         'features': features
     }
+    # Persiste el artefacto que utilizará la aplicación en cada predicción.
     joblib.dump(model_artifact, os.path.join(models_dir, 'global_classifier.joblib'))
     print("Modelo enriquecido con variables socio-demográficas guardado exitosamente.")
     return model_artifact, stats_df
 
 def calculate_candidate_weighted_score(carrera, nem, leng, mate, hycs, cien):
+    # Selecciona la prueba específica disponible y calcula un ponderado orientativo.
     carrera_str = str(carrera).lower()
     esp = max(hycs if not np.isnan(hycs) else 0, cien if not np.isnan(cien) else 0)
     if esp == 0:
@@ -77,12 +89,14 @@ def predict_admission_probability(
     """
     Computes admission probability considering academic scores AND socio-demographic cross-variables.
     """
+    # Busca los percentiles históricos de la combinación seleccionada.
     row = stats_df[
         (stats_df['nombre_institucion_educacion_superior'] == inst_name) & 
         (stats_df['nombre_carrera_normalizacion'] == carrera_name)
     ]
     
     if row.empty:
+        # Usa referencias conservadoras cuando no hay registros históricos directos.
         p10, p25, p50, p75, p90 = 500, 550, 600, 650, 720
         nem_prom, leng_prom, mate_prom, hycs_prom, cien_prom = 600, 600, 600, 600, 600
         cuantil_prom = 3.0
@@ -96,16 +110,17 @@ def predict_admission_probability(
         cien_prom = r['cien_prom']
         cuantil_prom = r['cuantil_ingreso_prom']
 
+    # Calcula el ponderado del postulante con las mismas reglas del entrenamiento.
     user_weighted = calculate_candidate_weighted_score(carrera_name, nem, leng, mate, hycs, cien)
     esp_max = max(hycs, cien)
     
-    # Categorical Encodes
+    # Convierte las respuestas contextuales a indicadores numéricos.
     is_pagado = 1 if 'Pagado' in tipo_colegio else 0
     is_subv = 1 if 'Subvencionado' in tipo_colegio else 0
     is_trabaja = 1 if 'Sí' in trabaja or 'Si' in trabaja else 0
     is_fem = 1 if 'Femenino' in sexo else 0
     
-    # ML Prediction with full features
+    # Construye las features y obtiene la probabilidad del clasificador.
     clf = model_artifact['model']
     scaler = model_artifact['scaler']
     X_input = pd.DataFrame([{
@@ -125,7 +140,7 @@ def predict_admission_probability(
     X_scaled = scaler.transform(X_input)
     ml_prob = clf.predict_proba(X_scaled)[0][1] * 100.0
     
-    # Empirical Calibration
+    # Calcula una segunda estimación basada en la posición frente a percentiles.
     if user_weighted >= p90:
         emp_prob = 95.0 + min(4.0, (user_weighted - p90) / 10.0)
     elif user_weighted >= p75:
@@ -139,9 +154,11 @@ def predict_admission_probability(
     else:
         emp_prob = max(5.0, 15.0 * (user_weighted / max(1, p10)))
         
+    # Combina el modelo ML y la referencia empírica, limitando el resultado al rango útil.
     final_prob = round(0.50 * emp_prob + 0.50 * ml_prob, 1)
     final_prob = max(3.0, min(99.0, final_prob))
     
+    # Traduce la probabilidad final a una categoría visual para la interfaz.
     if final_prob >= 75.0:
         label = "Alta Probabilidad de Ingreso"
         badge_class = "prob-high"
@@ -155,7 +172,7 @@ def predict_admission_probability(
         badge_class = "prob-low"
         color = "#C62828"
         
-    # Factor impact notes
+    # Registra factores contextuales que ayudan a interpretar el resultado.
     factor_notes = []
     if cuantil_ingreso > cuantil_prom + 0.5:
         factor_notes.append("⬆️ Cuantil socioeconómico superior a la media de la carrera (+3% ajuste de retención histórica)")
@@ -188,6 +205,7 @@ def predict_admission_probability(
     }
 
 def recommend_alternative_careers(nem, leng, mate, hycs, cien, target_carrera, stats_df, top_n=4):
+    # Evalúa cada alternativa contra su corte histórico y conserva las viables.
     recommendations = []
     for _, r in stats_df.iterrows():
         inst = r['nombre_institucion_educacion_superior']
@@ -208,6 +226,7 @@ def recommend_alternative_careers(nem, leng, mate, hycs, cien, target_carrera, s
                 'probabilidad': round(prob_est, 1)
             })
             
+    # Ordena las recomendaciones por la probabilidad estimada más alta.
     rec_df = pd.DataFrame(recommendations)
     if rec_df.empty:
         return pd.DataFrame()

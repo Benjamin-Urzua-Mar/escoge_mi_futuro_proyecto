@@ -15,6 +15,7 @@ from __future__ import annotations
 
 def _fmt(value, suffix: str = "%", decimals: int = 1) -> str:
     """Formatea un valor numérico; devuelve 'Sin datos' si es None/NaN."""
+    # Centraliza el formato para evitar cifras inconsistentes en el informe.
     if value is None:
         return "Sin datos"
     try:
@@ -28,6 +29,7 @@ def _build_carreras_txt(carreras: list[dict]) -> str:
     if not carreras:
         return "No se encontraron carreras alternativas con los puntajes ingresados."
 
+    # Convierte las recomendaciones estructuradas a texto legible para el modelo.
     lines: list[str] = []
     for i, c in enumerate(carreras, start=1):
         afinidad = c.get("afinidad_contextual")
@@ -45,6 +47,7 @@ def _build_factores_txt(factores: list[str]) -> str:
     """Genera la sección de factores sociodemográficos destacados."""
     if not factores:
         return "No se identificaron factores sociodemográficos destacados."
+    # Mantiene cada factor como una viñeta independiente.
     return "\n".join(f"• {f}" for f in factores)
 
 
@@ -79,14 +82,14 @@ def construir_prompt(
         Lista de diccionarios con las recomendaciones enriquecidas.
     """
 
-    # — Puntajes del usuario —
+    # Reúne los puntajes y la prueba electiva elegida.
     prueba_electiva = puntajes.get("tipo_electiva", "Ciencias")
     ptje_electiva = puntajes.get("puntaje_electiva", "Sin datos")
 
-    # — Promedios históricos de la carrera —
+    # Recupera los promedios históricos para contextualizar los puntajes.
     promedios = prediccion.get("promedios_carrera", {})
 
-    # — Comparación puntajes vs promedios —
+    # Construye comparaciones explícitas entre el usuario y la referencia histórica.
     def _comparar(nombre: str, usuario, promedio) -> str:
         try:
             diff = float(usuario) - float(promedio)
@@ -106,7 +109,7 @@ def construir_prompt(
         ),
     ])
 
-    # — Secciones de texto —
+    # Prepara recomendaciones y factores antes de interpolarlos en el prompt final.
     carreras_txt = _build_carreras_txt(carreras_alternativas)
     factores_txt = _build_factores_txt(prediccion.get("factores", []))
 
